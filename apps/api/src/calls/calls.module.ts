@@ -1,0 +1,11 @@
+import { Module } from '@nestjs/common';
+import { CallsController } from './calls.controller';
+import { CallsService } from './calls.service';
+import { CallsGateway } from './calls.gateway';
+
+@Module({
+  controllers: [CallsController],
+  providers: [CallsService, CallsGateway],
+  exports: [CallsService, CallsGateway],
+})
+export class CallsModule {}

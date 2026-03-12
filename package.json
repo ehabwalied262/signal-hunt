@@ -1,0 +1,32 @@
+{
+  "name": "signalhunt",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "dev:api": "turbo dev --filter=@signalhunt/api",
+    "dev:web": "turbo dev --filter=@signalhunt/web",
+    "dev:worker": "turbo dev:worker --filter=@signalhunt/api",
+    "db:migrate": "turbo db:migrate --filter=@signalhunt/api",
+    "db:generate": "turbo db:generate --filter=@signalhunt/api",
+    "db:seed": "turbo db:seed --filter=@signalhunt/api",
+    "db:studio": "turbo db:studio --filter=@signalhunt/api",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "clean": "turbo clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "turbo": "^2.4.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "npm@10.9.2"
+}

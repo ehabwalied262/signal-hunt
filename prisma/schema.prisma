@@ -1,0 +1,229 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// Enums
+// ============================================
+
+enum UserRole {
+  BDR
+  ADMIN
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  INTERESTED
+  NOT_INTERESTED
+  WRONG_NUMBER
+  CALLBACK_SCHEDULED
+}
+
+enum CallStatus {
+  INITIATING
+  RINGING
+  IN_PROGRESS
+  COMPLETED
+  NO_ANSWER
+  BUSY
+  FAILED
+  CANCELED
+}
+
+enum DispositionType {
+  INTERESTED
+  NOT_INTERESTED
+  CALLBACK
+  WRONG_NUMBER
+  NO_ANSWER
+  VOICEMAIL
+  GATEKEEPER
+  OTHER
+}
+
+enum TelephonyProvider {
+  TWILIO
+  TELNYX
+}
+
+enum TranscriptionProvider {
+  DEEPGRAM
+  ASSEMBLYAI
+}
+
+enum TranscriptionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  AWAITING_DEDUP_REVIEW
+}
+
+// ============================================
+// Models
+// ============================================
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  fullName     String   @map("full_name")
+  role         UserRole @default(BDR)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  assignedPhoneNumber     PhoneNumber?
+  ownedLeads              Lead[]
+  calls                   Call[]
+  requestedTranscriptions Transcription[]
+  csvImports              CsvImport[]
+
+  @@map("users")
+}
+
+model PhoneNumber {
+  id             String            @id @default(uuid())
+  number         String // E.164 format: +442071234567
+  countryCode    String            @map("country_code") // GB, DE, NL
+  provider       TelephonyProvider
+  providerSid    String?           @map("provider_sid") // Twilio phone number SID
+  assignedUserId String?           @unique @map("assigned_user_id")
+  isActive       Boolean           @default(true) @map("is_active")
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  // Relations
+  assignedUser User? @relation(fields: [assignedUserId], references: [id])
+  calls        Call[]
+
+  @@unique([number, provider])
+  @@map("phone_numbers")
+}
+
+model Lead {
+  id                 String     @id @default(uuid())
+  companyName        String     @map("company_name")
+  contactName        String?    @map("contact_name")
+  contactTitle       String?    @map("contact_title")
+  phoneNumber        String     @map("phone_number") // E.164 format
+  country            String?
+  location           String?
+  headcount          Int?
+  headcountGrowth6m  Decimal?   @map("headcount_growth_6m") @db.Decimal(5, 2)
+  headcountGrowth12m Decimal?   @map("headcount_growth_12m") @db.Decimal(5, 2)
+  companyOverview    String?    @map("company_overview") @db.Text
+  aiSummary          String?    @map("ai_summary") @db.Text
+  ownerId            String     @map("owner_id")
+  status             LeadStatus @default(NEW)
+  isWrongNumber      Boolean    @default(false) @map("is_wrong_number")
+  sourceImportId     String?    @map("source_import_id")
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+
+  // Relations
+  owner        User       @relation(fields: [ownerId], references: [id])
+  sourceImport CsvImport? @relation(fields: [sourceImportId], references: [id])
+  calls        Call[]
+
+  @@index([ownerId, status])
+  @@index([phoneNumber])
+  @@map("leads")
+}
+
+model Call {
+  id              String     @id @default(uuid())
+  leadId          String     @map("lead_id")
+  agentId         String     @map("agent_id")
+  phoneNumberId   String     @map("phone_number_id")
+  providerCallId  String?    @map("provider_call_id") // Twilio Call SID
+  status          CallStatus @default(INITIATING)
+  startedAt       DateTime?  @map("started_at")
+  answeredAt      DateTime?  @map("answered_at")
+  endedAt         DateTime?  @map("ended_at")
+  durationSeconds Int?       @map("duration_seconds") // total ring + talk time
+  talkTimeSeconds Int?       @map("talk_time_seconds") // only after answer
+  recordingUrl    String?    @map("recording_url")
+  recordingSid    String?    @map("recording_sid") // Twilio recording SID
+  errorCode       String?    @map("error_code")
+  createdAt       DateTime   @default(now()) @map("created_at")
+
+  // Relations
+  lead          Lead          @relation(fields: [leadId], references: [id])
+  agent         User          @relation(fields: [agentId], references: [id])
+  phoneNumber   PhoneNumber   @relation(fields: [phoneNumberId], references: [id])
+  disposition   Disposition?
+  transcription Transcription?
+
+  @@index([agentId, status])
+  @@index([leadId, createdAt])
+  @@map("calls")
+}
+
+model Disposition {
+  id                  String          @id @default(uuid())
+  callId              String          @unique @map("call_id")
+  type                DispositionType
+  notes               String?         @db.Text
+  painPoints          String?         @map("pain_points") @db.Text
+  callbackScheduledAt DateTime?       @map("callback_scheduled_at")
+  createdAt           DateTime        @default(now()) @map("created_at")
+
+  // Relations
+  call Call @relation(fields: [callId], references: [id])
+
+  @@index([type])
+  @@map("dispositions")
+}
+
+model Transcription {
+  id           String                @id @default(uuid())
+  callId       String                @unique @map("call_id")
+  provider     TranscriptionProvider
+  status       TranscriptionStatus   @default(PENDING)
+  text         String?               @db.Text
+  requestedBy  String                @map("requested_by")
+  requestedAt  DateTime              @map("requested_at")
+  completedAt  DateTime?             @map("completed_at")
+  errorMessage String?               @map("error_message")
+  createdAt    DateTime              @default(now()) @map("created_at")
+
+  // Relations
+  call      Call @relation(fields: [callId], references: [id])
+  requester User @relation(fields: [requestedBy], references: [id])
+
+  @@map("transcriptions")
+}
+
+model CsvImport {
+  id              String       @id @default(uuid())
+  uploadedBy      String       @map("uploaded_by")
+  filename        String
+  totalRows       Int?         @map("total_rows")
+  processedRows   Int          @default(0) @map("processed_rows")
+  newLeads        Int          @default(0) @map("new_leads")
+  duplicatesFound Int          @default(0) @map("duplicates_found")
+  status          ImportStatus @default(PENDING)
+  duplicateData   Json?        @map("duplicate_data") // stores dups for merge review UI
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  uploader User   @relation(fields: [uploadedBy], references: [id])
+  leads    Lead[]
+
+  @@map("csv_imports")
+}
