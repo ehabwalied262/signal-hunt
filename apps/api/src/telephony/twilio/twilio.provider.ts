@@ -19,7 +19,7 @@ import {
 @Injectable()
 export class TwilioProvider implements TelephonyProvider {
   private readonly logger = new Logger(TwilioProvider.name);
-  private readonly client: twilio.Twilio;
+  private client: twilio.Twilio;
   private readonly accountSid: string;
   private readonly authToken: string;
   private readonly apiKey: string;
@@ -27,13 +27,17 @@ export class TwilioProvider implements TelephonyProvider {
   private readonly twimlAppSid: string;
 
   constructor(private configService: ConfigService) {
-    this.accountSid = this.configService.getOrThrow<string>('TWILIO_ACCOUNT_SID');
-    this.authToken = this.configService.getOrThrow<string>('TWILIO_AUTH_TOKEN');
-    this.apiKey = this.configService.getOrThrow<string>('TWILIO_API_KEY');
-    this.apiSecret = this.configService.getOrThrow<string>('TWILIO_API_SECRET');
-    this.twimlAppSid = this.configService.getOrThrow<string>('TWILIO_TWIML_APP_SID');
+    this.accountSid = this.configService.get<string>('TWILIO_ACCOUNT_SID', '');
+    this.authToken = this.configService.get<string>('TWILIO_AUTH_TOKEN', '');
+    this.apiKey = this.configService.get<string>('TWILIO_API_KEY', '');
+    this.apiSecret = this.configService.get<string>('TWILIO_API_SECRET', '');
+    this.twimlAppSid = this.configService.get<string>('TWILIO_TWIML_APP_SID', '');
 
-    this.client = twilio.default(this.accountSid, this.authToken);
+    // Only initialize the Twilio client if credentials are provided
+    // When using mock provider, these will be empty and that's OK
+    if (this.accountSid && this.authToken) {
+      this.client = twilio.default(this.accountSid, this.authToken);
+    }
   }
 
   /**

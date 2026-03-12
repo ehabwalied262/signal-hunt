@@ -1,16 +1,19 @@
-import { Module, Global } from '@nestjs/common';
+import { Module, Global, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TELEPHONY_PROVIDER } from './telephony.interface';
 import { TwilioProvider } from './twilio/twilio.provider';
 import { TelnyxProvider } from './telnyx/telnyx.provider';
+import { MockTelephonyProvider } from './mock/mock.provider';
+
+const logger = new Logger('TelephonyModule');
 
 /**
  * Telephony module — provides the active telephony provider via DI.
  *
- * To switch from Twilio to Telnyx:
- *   1. Set TELEPHONY_PROVIDER=telnyx in .env
- *   2. Implement TelnyxProvider fully
- *   3. Done. Zero changes to business logic.
+ * Provider selection logic:
+ *   1. TELEPHONY_PROVIDER_NAME=mock  → MockTelephonyProvider (dev/testing)
+ *   2. TELEPHONY_PROVIDER_NAME=telnyx → TelnyxProvider
+ *   3. TELEPHONY_PROVIDER_NAME=twilio → TwilioProvider (default)
  *
  * @Global() makes this injectable everywhere without importing.
  */
@@ -19,20 +22,31 @@ import { TelnyxProvider } from './telnyx/telnyx.provider';
   providers: [
     TwilioProvider,
     TelnyxProvider,
+    MockTelephonyProvider,
     {
       provide: TELEPHONY_PROVIDER,
-      useFactory: (configService: ConfigService, twilio: TwilioProvider, telnyx: TelnyxProvider) => {
+      useFactory: (
+        configService: ConfigService,
+        twilio: TwilioProvider,
+        telnyx: TelnyxProvider,
+        mock: MockTelephonyProvider,
+      ) => {
         const provider = configService.get<string>('TELEPHONY_PROVIDER_NAME', 'twilio');
 
         switch (provider) {
+          case 'mock':
+            logger.log('Using MOCK telephony provider');
+            return mock;
           case 'telnyx':
+            logger.log('Using TELNYX telephony provider');
             return telnyx;
           case 'twilio':
           default:
+            logger.log('Using TWILIO telephony provider');
             return twilio;
         }
       },
-      inject: [ConfigService, TwilioProvider, TelnyxProvider],
+      inject: [ConfigService, TwilioProvider, TelnyxProvider, MockTelephonyProvider],
     },
   ],
   exports: [TELEPHONY_PROVIDER],

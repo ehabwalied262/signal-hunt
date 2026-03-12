@@ -4,11 +4,15 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/sidebar';
 import { TopBar } from '@/components/layout/top-bar';
+import { CallWidget } from '@/components/call/call-widget';
 import { useAuthStore } from '@/store/auth.store';
+import { useSocket } from '@/hooks/use-socket';
 
 /**
- * Dashboard layout — sidebar + top bar + main content.
+ * Dashboard layout — sidebar + top bar + main content + call widget.
+ *
  * Protected: redirects to /login if not authenticated.
+ * Initializes WebSocket connection for real-time call updates.
  */
 export default function DashboardLayout({
   children,
@@ -17,6 +21,9 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const { isAuthenticated, loadFromStorage } = useAuthStore();
+
+  // Initialize WebSocket connection for call status updates
+  useSocket();
 
   useEffect(() => {
     loadFromStorage();
@@ -47,6 +54,9 @@ export default function DashboardLayout({
         <TopBar />
         <main className="flex-1 overflow-auto p-6">{children}</main>
       </div>
+
+      {/* Floating call widget — appears when a call is active */}
+      <CallWidget />
     </div>
   );
 }

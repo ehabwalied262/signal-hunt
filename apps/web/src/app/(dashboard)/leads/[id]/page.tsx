@@ -1,19 +1,22 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   Phone,
   PhoneOff,
   Building2,
-  User,
   MapPin,
   Users,
   Clock,
   AlertTriangle,
+  Loader2,
+  Disc,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { useCall } from '@/hooks/use-call';
+import { useCallStore } from '@/store/call.store';
 import { cn } from '@/lib/utils';
 
 interface LeadDetail {
@@ -36,7 +39,9 @@ interface LeadDetail {
     startedAt: string | null;
     answeredAt: string | null;
     endedAt: string | null;
+    durationSeconds: number | null;
     talkTimeSeconds: number | null;
+    recordingUrl: string | null;
     disposition: {
       type: string;
       notes: string | null;
@@ -50,20 +55,45 @@ export default function LeadDetailPage() {
   const router = useRouter();
   const [lead, setLead] = useState<LeadDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const { initiateCall, isInitiating, error: callError } = useCall();
+  const { isOnCall, activeCall } = useCallStore();
+
+  const fetchLead = useCallback(async () => {
+    try {
+      const response = await apiClient.get(`/leads/${params.id}`);
+      setLead(response.data);
+    } catch (error) {
+      console.error('Failed to fetch lead:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [params.id]);
 
   useEffect(() => {
-    const fetchLead = async () => {
-      try {
-        const response = await apiClient.get(`/leads/${params.id}`);
-        setLead(response.data);
-      } catch (error) {
-        console.error('Failed to fetch lead:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchLead();
-  }, [params.id]);
+  }, [fetchLead]);
+
+  // Refresh lead data when a call completes (to show updated call history)
+  useEffect(() => {
+    if (
+      activeCall?.leadId === params.id &&
+      activeCall?.status &&
+      ['COMPLETED', 'NO_ANSWER', 'BUSY', 'FAILED'].includes(activeCall.status)
+    ) {
+      // Delay slightly to let the backend process
+      const timer = setTimeout(fetchLead, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [activeCall?.status, activeCall?.leadId, params.id, fetchLead]);
+
+  const handleCallNow = async () => {
+    if (!lead) return;
+    try {
+      await initiateCall(lead.id);
+    } catch {
+      // Error is in callError state
+    }
+  };
 
   if (loading) {
     return (
@@ -88,6 +118,9 @@ export default function LeadDetailPage() {
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
+
+  const canCall = !lead.isWrongNumber && !isOnCall && !isInitiating;
+  const isCallingThisLead = isOnCall && activeCall?.leadId === lead.id;
 
   return (
     <div>
@@ -149,7 +182,7 @@ export default function LeadDetailPage() {
               )}
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Building2 className="h-4 w-4 text-gray-400" />
-                {lead.status.replace('_', ' ')}
+                {lead.status.replace(/_/g, ' ')}
               </div>
             </div>
 
@@ -174,7 +207,7 @@ export default function LeadDetailPage() {
 
             {lead.calls.length === 0 ? (
               <p className="py-8 text-center text-sm text-gray-400">
-                No calls yet
+                No calls yet — click &ldquo;Call Now&rdquo; to start your first call
               </p>
             ) : (
               <div className="space-y-3">
@@ -191,18 +224,22 @@ export default function LeadDetailPage() {
                             ? 'bg-green-100'
                             : call.status === 'NO_ANSWER'
                               ? 'bg-yellow-100'
-                              : 'bg-red-100',
+                              : call.status === 'IN_PROGRESS'
+                                ? 'bg-blue-100'
+                                : 'bg-red-100',
                         )}
                       >
                         {call.status === 'COMPLETED' ? (
                           <Phone className="h-4 w-4 text-green-600" />
+                        ) : call.status === 'IN_PROGRESS' ? (
+                          <Phone className="h-4 w-4 animate-pulse text-blue-600" />
                         ) : (
                           <PhoneOff className="h-4 w-4 text-red-500" />
                         )}
                       </div>
                       <div>
                         <p className="text-sm font-medium text-gray-900">
-                          {call.status.replace('_', ' ')}
+                          {call.status.replace(/_/g, ' ')}
                         </p>
                         <p className="text-xs text-gray-500">
                           {call.startedAt
@@ -213,15 +250,22 @@ export default function LeadDetailPage() {
                     </div>
 
                     <div className="flex items-center gap-4">
-                      {call.talkTimeSeconds !== null && (
-                        <div className="flex items-center gap-1 text-sm text-gray-500">
-                          <Clock className="h-3 w-3" />
-                          {formatDuration(call.talkTimeSeconds)}
+                      {call.talkTimeSeconds !== null &&
+                        call.talkTimeSeconds > 0 && (
+                          <div className="flex items-center gap-1 text-sm text-gray-500">
+                            <Clock className="h-3 w-3" />
+                            {formatDuration(call.talkTimeSeconds)}
+                          </div>
+                        )}
+                      {call.recordingUrl && (
+                        <div className="flex items-center gap-1 text-xs text-blue-600">
+                          <Disc className="h-3 w-3" />
+                          Recorded
                         </div>
                       )}
                       {call.disposition && (
                         <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-                          {call.disposition.type.replace('_', ' ')}
+                          {call.disposition.type.replace(/_/g, ' ')}
                         </span>
                       )}
                     </div>
@@ -239,12 +283,47 @@ export default function LeadDetailPage() {
             <h3 className="mb-4 text-sm font-medium text-gray-700">
               Quick Actions
             </h3>
+
+            {/* Active call indicator */}
+            {isCallingThisLead && (
+              <div className="mb-3 flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
+                <Phone className="h-4 w-4 animate-pulse" />
+                Call in progress — use the call widget to manage
+              </div>
+            )}
+
+            {/* Call error */}
+            {callError && (
+              <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                {callError}
+              </div>
+            )}
+
             <button
-              disabled={lead.isWrongNumber}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+              onClick={handleCallNow}
+              disabled={!canCall}
+              className={cn(
+                'flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-medium transition-colors',
+                canCall
+                  ? 'bg-green-600 text-white hover:bg-green-700'
+                  : 'cursor-not-allowed bg-gray-300 text-gray-500',
+              )}
             >
-              <Phone className="h-4 w-4" />
-              {lead.isWrongNumber ? 'Wrong Number' : 'Call Now'}
+              {isInitiating ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Starting Call...
+                </>
+              ) : (
+                <>
+                  <Phone className="h-4 w-4" />
+                  {lead.isWrongNumber
+                    ? 'Wrong Number'
+                    : isOnCall
+                      ? 'Already on a Call'
+                      : 'Call Now'}
+                </>
+              )}
             </button>
             <p className="mt-2 text-center text-xs text-gray-400">
               {lead.phoneNumber}
