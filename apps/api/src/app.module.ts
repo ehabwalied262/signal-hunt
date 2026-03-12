@@ -9,6 +9,7 @@ import { CallsModule } from './calls/calls.module';
 import { DispositionsModule } from './dispositions/dispositions.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { TelephonyModule } from './telephony/telephony.module';
+import { ImportsModule } from './imports/imports.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { TelephonyModule } from './telephony/telephony.module';
     DispositionsModule,
     WebhooksModule,
     TelephonyModule,
+    ImportsModule,
   ],
 })
 export class AppModule {}
