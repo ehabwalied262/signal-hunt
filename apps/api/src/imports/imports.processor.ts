@@ -1,23 +1,15 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
-import { ImportStatus } from '@prisma/client';
+import { ImportStatus, ImportRowResolution } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
+/**
+ * Lightweight payload — the processor reads actual row data from CsvImportRow.
+ * This keeps the BullMQ/Redis payload at ~80 bytes regardless of CSV size.
+ */
 interface ImportJobData {
   importId: string;
-  rows: Array<{
-    companyName: string;
-    contactName: string | null;
-    contactTitle: string | null;
-    phoneNumber: string;
-    country: string | null;
-    location: string | null;
-    headcount: number | null;
-    headcountGrowth6m: number | null;
-    headcountGrowth12m: number | null;
-    companyOverview: string | null;
-  }>;
   ownerId: string;
 }
 
@@ -30,11 +22,9 @@ export class ImportsProcessor extends WorkerHost {
   }
 
   async process(job: Job<ImportJobData>): Promise<void> {
-    const { importId, rows, ownerId } = job.data;
+    const { importId, ownerId } = job.data;
 
-    this.logger.log(
-      `Processing CSV import ${importId}: ${rows.length} rows`,
-    );
+    this.logger.log(`Processing CSV import ${importId}`);
 
     // Update status to processing
     await this.prisma.csvImport.update({
@@ -46,15 +36,40 @@ export class ImportsProcessor extends WorkerHost {
     let createdCount = 0;
 
     try {
-      // Process in batches of 50 for better performance
+      // Count total importable rows for progress reporting
+      const totalImportable = await this.prisma.csvImportRow.count({
+        where: {
+          importId,
+          resolution: {
+            in: [ImportRowResolution.PENDING, ImportRowResolution.IMPORT],
+          },
+        },
+      });
+
+      // Process in batches using cursor-based pagination
       const batchSize = 50;
+      let cursor: string | undefined;
 
-      for (let i = 0; i < rows.length; i += batchSize) {
-        const batch = rows.slice(i, i + batchSize);
+      while (true) {
+        const rows = await this.prisma.csvImportRow.findMany({
+          where: {
+            importId,
+            resolution: {
+              in: [ImportRowResolution.PENDING, ImportRowResolution.IMPORT],
+            },
+          },
+          take: batchSize,
+          ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+          orderBy: { rowIndex: 'asc' },
+        });
 
-        // Use createMany for bulk insert
+        if (rows.length === 0) break;
+
+        cursor = rows[rows.length - 1].id;
+
+        // Bulk insert leads
         const result = await this.prisma.lead.createMany({
-          data: batch.map((row) => ({
+          data: rows.map((row) => ({
             companyName: row.companyName,
             contactName: row.contactName,
             contactTitle: row.contactTitle,
@@ -64,6 +79,11 @@ export class ImportsProcessor extends WorkerHost {
             headcount: row.headcount,
             headcountGrowth6m: row.headcountGrowth6m,
             headcountGrowth12m: row.headcountGrowth12m,
+            email: row.email,
+            website: row.website,
+            personalLinkedin: row.personalLinkedin,
+            companyLinkedin: row.companyLinkedin,
+            industry: row.industry,
             companyOverview: row.companyOverview,
             ownerId,
             sourceImportId: importId,
@@ -71,7 +91,7 @@ export class ImportsProcessor extends WorkerHost {
           skipDuplicates: true, // Safety net — skip if somehow duplicated
         });
 
-        processedCount += batch.length;
+        processedCount += rows.length;
         createdCount += result.count;
 
         // Update progress
@@ -84,9 +104,11 @@ export class ImportsProcessor extends WorkerHost {
         });
 
         // Report progress to BullMQ
-        await job.updateProgress(
-          Math.round((processedCount / rows.length) * 100),
-        );
+        if (totalImportable > 0) {
+          await job.updateProgress(
+            Math.round((processedCount / totalImportable) * 100),
+          );
+        }
       }
 
       // Mark as completed

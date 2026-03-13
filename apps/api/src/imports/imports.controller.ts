@@ -14,21 +14,24 @@ import { UserRole } from '@prisma/client';
 import { ImportsService } from './imports.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Serialize } from '../common/interceptors/serialize.interceptor';
+import {
+  ImportUploadResponseDto,
+  ImportResolveResponseDto,
+  ImportStatusResponseDto,
+} from '../common/dto/import-response.dto';
 
-@Controller('imports')
+@Controller({path: 'imports', version: '1'})
 @UseGuards(JwtAuthGuard)
 export class ImportsController {
   constructor(private importsService: ImportsService) {}
 
-  /**
-   * POST /api/imports/upload — Upload a CSV/Excel file
-   * File is parsed, validated, and either processed or returned with duplicates.
-   */
   @Post('upload')
+  @Serialize(ImportUploadResponseDto)
   @UseInterceptors(
     FileInterceptor('file', {
       limits: {
-        fileSize: 10 * 1024 * 1024, // 10MB max
+        fileSize: 10 * 1024 * 1024,
       },
       fileFilter: (_req, file, callback) => {
         const allowed = [
@@ -61,11 +64,8 @@ export class ImportsController {
     return this.importsService.uploadFile(file, userId);
   }
 
-  /**
-   * POST /api/imports/:id/resolve — Resolve duplicate decisions
-   * Called after user reviews duplicates and decides skip/merge/import for each.
-   */
   @Post(':id/resolve')
+  @Serialize(ImportResolveResponseDto)
   async resolveDuplicates(
     @Param('id') importId: string,
     @CurrentUser('id') userId: string,
@@ -84,18 +84,14 @@ export class ImportsController {
     );
   }
 
-  /**
-   * GET /api/imports/:id — Get import status (for polling progress)
-   */
   @Get(':id')
+  @Serialize(ImportStatusResponseDto)
   async getStatus(@Param('id') importId: string) {
     return this.importsService.getImportStatus(importId);
   }
 
-  /**
-   * GET /api/imports — List recent imports
-   */
   @Get()
+  @Serialize(ImportStatusResponseDto)
   async list(
     @CurrentUser() user: { id: string; role: string },
   ) {

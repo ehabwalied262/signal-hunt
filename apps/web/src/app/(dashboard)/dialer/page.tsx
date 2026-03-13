@@ -7,6 +7,7 @@ import {
   Search,
   ArrowRight,
   Zap,
+  Building2,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { useCall } from '@/hooks/use-call';
@@ -17,18 +18,14 @@ interface LeadQuick {
   id: string;
   companyName: string;
   contactName: string | null;
+  contactTitle: string | null;
   phoneNumber: string;
   status: string;
   country: string | null;
+  industry: string | null;
   isWrongNumber: boolean;
 }
 
-/**
- * Dialer page — Quick-call interface.
- *
- * Shows leads that are ready to be called (NEW or CONTACTED, not wrong number).
- * Agent can quickly search and one-click dial from this page.
- */
 export default function DialerPage() {
   const router = useRouter();
   const [leads, setLeads] = useState<LeadQuick[]>([]);
@@ -74,7 +71,7 @@ export default function DialerPage() {
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center gap-3">
-          <div className="rounded-lg bg-blue-100 p-2">
+          <div className="rounded-lg badge-bg-new p-2">
             <Zap className="h-5 w-5 text-blue-600" />
           </div>
           <div>
@@ -90,8 +87,6 @@ export default function DialerPage() {
       <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
         <p className="text-sm text-amber-700">
           <strong>Mock Mode Active</strong> — Calls are simulated locally.
-          The full call lifecycle (ringing → answered → completed) runs without
-          real phone numbers.
         </p>
       </div>
 
@@ -102,7 +97,7 @@ export default function DialerPage() {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by company, contact, or phone number..."
+          placeholder="Search by name, company, or phone number..."
           className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         />
       </div>
@@ -124,28 +119,38 @@ export default function DialerPage() {
               className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-5 py-4 transition-colors hover:border-gray-300"
             >
               <div className="min-w-0 flex-1">
+                {/* Lead name prominent */}
                 <div className="flex items-center gap-2">
                   <p className="truncate text-sm font-semibold text-gray-900">
-                    {lead.companyName}
+                    {lead.contactName || 'Unknown Contact'}
                   </p>
                   <span
                     className={cn(
                       'rounded-full px-2 py-0.5 text-xs font-medium',
                       lead.status === 'NEW'
-                        ? 'bg-blue-50 text-blue-700'
+                        ? 'badge-new'
                         : lead.status === 'CONTACTED'
-                          ? 'bg-green-50 text-green-700'
-                          : 'bg-gray-50 text-gray-700',
+                          ? 'badge-new'
+                          : 'badge-tag',
                     )}
                   >
                     {lead.status.replace(/_/g, ' ')}
                   </span>
                 </div>
-                <p className="mt-0.5 text-xs text-gray-500">
-                  {lead.contactName && `${lead.contactName} · `}
-                  {lead.phoneNumber}
-                  {lead.country && ` · ${lead.country}`}
-                </p>
+                {/* Phone + Company on second line */}
+                <div className="mt-1 flex items-center gap-3 text-xs text-gray-500">
+                  <span className="flex items-center gap-1">
+                    <Phone className="h-3 w-3" />
+                    {lead.phoneNumber}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Building2 className="h-3 w-3" />
+                    {lead.companyName}
+                  </span>
+                  {lead.country && (
+                    <span>{lead.country}</span>
+                  )}
+                </div>
               </div>
 
               <div className="ml-4 flex items-center gap-2">
@@ -160,14 +165,14 @@ export default function DialerPage() {
                   onClick={() => handleQuickCall(lead.id)}
                   disabled={isOnCall || isInitiating}
                   className={cn(
-                    'flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-medium transition-colors',
+                    'flex h-9 w-9 items-center justify-center rounded-full transition-all',
                     isOnCall || isInitiating
                       ? 'cursor-not-allowed bg-gray-100 text-gray-400'
-                      : 'bg-green-600 text-white hover:bg-green-700',
+                      : 'bg-green-600 text-white hover:bg-green-700 hover:scale-105',
                   )}
+                  title={`Call ${lead.contactName || lead.companyName}`}
                 >
-                  <Phone className="h-3.5 w-3.5" />
-                  Call
+                  <Phone className="h-4 w-4" />
                 </button>
               </div>
             </div>

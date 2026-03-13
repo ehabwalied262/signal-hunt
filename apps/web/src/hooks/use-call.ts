@@ -19,6 +19,9 @@ export function useCall() {
    * Start an outbound call to a lead.
    * The backend handles concurrency, ownership, and provider selection.
    * Status updates arrive via WebSocket → call store.
+   *
+   * On 409 (stale call blocking): automatically clears the stale call
+   * and retries once before surfacing an error to the user.
    */
   const initiateCall = useCallback(async (leadId: string) => {
     setIsInitiating(true);
@@ -28,6 +31,20 @@ export function useCall() {
       const response = await apiClient.post('/calls/initiate', { leadId });
       return response.data;
     } catch (err: any) {
+      // 409 = stale call blocking. Clear it then retry once.
+      if (err.response?.status === 409) {
+        try {
+          await apiClient.post('/calls/clear-stale');
+          const retryResponse = await apiClient.post('/calls/initiate', { leadId });
+          return retryResponse.data;
+        } catch (retryErr: any) {
+          const message =
+            retryErr.response?.data?.message || 'Failed to initiate call';
+          setError(message);
+          throw retryErr;
+        }
+      }
+
       const message =
         err.response?.data?.message || 'Failed to initiate call';
       setError(message);
@@ -39,15 +56,20 @@ export function useCall() {
 
   /**
    * End the currently active call.
-   * The backend sends a hangup command to the provider.
+   *
+   * Accepts an explicit callId so the widget never relies on a stale
+   * closure — the caller always passes the id it already has on screen.
+   * Falls back to the store's activeCall.callId if none is provided.
+   *
    * COMPLETED status arrives via webhook → WebSocket → call store.
    */
-  const endCall = useCallback(async () => {
-    if (!activeCall?.callId) return;
+  const endCall = useCallback(async (callId?: string) => {
+    const id = callId ?? activeCall?.callId;
+    if (!id) return;
     setError(null);
 
     try {
-      await apiClient.post(`/calls/${activeCall.callId}/end`);
+      await apiClient.post(`/calls/${id}/end`);
     } catch (err: any) {
       const message = err.response?.data?.message || 'Failed to end call';
       setError(message);

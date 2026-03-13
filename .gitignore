@@ -42,3 +42,6 @@ coverage/
 
 # Docker
 docker-data/
+
+.env.production
+.env*.local

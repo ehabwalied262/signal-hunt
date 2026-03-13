@@ -5,24 +5,68 @@ import { useRouter } from 'next/navigation';
 import { Phone } from 'lucide-react';
 import { useAuthStore } from '@/store/auth.store';
 
+interface FieldErrors {
+  email?: string;
+  password?: string;
+  general?: string;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { login, isLoading } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [errors, setErrors] = useState<FieldErrors>({});
+
+  const validate = (): boolean => {
+    const newErrors: FieldErrors = {};
+
+    if (!email.trim()) {
+      newErrors.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      newErrors.email = 'Please enter a valid email address';
+    }
+
+    if (!password) {
+      newErrors.password = 'Password is required';
+    } else if (password.length < 6) {
+      newErrors.password = 'Password must be at least 6 characters';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setErrors({});
+
+    if (!validate()) return;
 
     try {
       await login(email, password);
       router.push('/leads');
     } catch (err: any) {
-      setError(
-        err.response?.data?.message || 'Invalid email or password',
-      );
+      const serverErrors = err.response?.data?.errors;
+      const serverMessage = err.response?.data?.message;
+
+      if (Array.isArray(serverErrors)) {
+        // Map class-validator errors to field-level
+        const fieldErrors: FieldErrors = {};
+        for (const msg of serverErrors) {
+          const lower = msg.toLowerCase();
+          if (lower.includes('email')) {
+            fieldErrors.email = msg;
+          } else if (lower.includes('password')) {
+            fieldErrors.password = msg;
+          } else {
+            fieldErrors.general = msg;
+          }
+        }
+        setErrors(fieldErrors);
+      } else {
+        setErrors({ general: serverMessage || 'Invalid email or password' });
+      }
     }
   };
 
@@ -39,15 +83,15 @@ export default function LoginPage() {
         </p>
       </div>
 
-      {/* Error message */}
-      {error && (
+      {/* General error */}
+      {errors.general && (
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
+          {errors.general}
         </div>
       )}
 
       {/* Form */}
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         <div>
           <label
             htmlFor="email"
@@ -59,11 +103,20 @@ export default function LoginPage() {
             id="email"
             type="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
+            }}
             placeholder="you@company.com"
-            required
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={`w-full rounded-lg border px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 ${
+              errors.email
+                ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
+                : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
+            }`}
           />
+          {errors.email && (
+            <p className="mt-1 text-xs text-red-600">{errors.email}</p>
+          )}
         </div>
 
         <div>
@@ -77,11 +130,20 @@ export default function LoginPage() {
             id="password"
             type="password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
+            }}
             placeholder="Enter your password"
-            required
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={`w-full rounded-lg border px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 ${
+              errors.password
+                ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
+                : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
+            }`}
           />
+          {errors.password && (
+            <p className="mt-1 text-xs text-red-600">{errors.password}</p>
+          )}
         </div>
 
         <button

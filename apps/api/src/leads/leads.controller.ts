@@ -17,16 +17,17 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Serialize } from '../common/interceptors/serialize.interceptor';
+import { LeadResponseDto } from '../common/dto/lead-response.dto';
+import { PaginatedLeadsResponseDto } from '../common/dto/paginated-response.dto';
 
-@Controller('leads')
+@Controller({ path: 'leads', version: '1' })
 @UseGuards(JwtAuthGuard)
 export class LeadsController {
   constructor(private leadsService: LeadsService) {}
 
-  /**
-   * POST /api/leads — Create a single lead (assigned to current user)
-   */
   @Post()
+  @Serialize(LeadResponseDto)
   async create(
     @CurrentUser('id') userId: string,
     @Body() dto: CreateLeadDto,
@@ -34,11 +35,8 @@ export class LeadsController {
     return this.leadsService.create(userId, dto);
   }
 
-  /**
-   * GET /api/leads — Get paginated lead list
-   * BDRs see only their leads. Admins see all.
-   */
   @Get()
+  @Serialize(PaginatedLeadsResponseDto)
   async findAll(
     @CurrentUser() user: { id: string; role: string },
     @Query() filters: LeadFilterDto,
@@ -47,18 +45,14 @@ export class LeadsController {
     return this.leadsService.findAll(filters, ownerId);
   }
 
-  /**
-   * GET /api/leads/:id — Get single lead with call history
-   */
   @Get(':id')
+  @Serialize(LeadResponseDto)
   async findById(@Param('id') id: string) {
     return this.leadsService.findById(id);
   }
 
-  /**
-   * PATCH /api/leads/:id — Update lead
-   */
   @Patch(':id')
+  @Serialize(LeadResponseDto)
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateLeadDto,
@@ -72,12 +66,10 @@ export class LeadsController {
     );
   }
 
-  /**
-   * PATCH /api/leads/:id/reassign — Admin: reassign lead to another BDR
-   */
   @Patch(':id/reassign')
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
+  @Serialize(LeadResponseDto)
   async reassign(
     @Param('id') id: string,
     @Body('newOwnerId') newOwnerId: string,

@@ -16,6 +16,8 @@ import {
 import { CallStatusEvent, RecordingEvent } from '../telephony/telephony.models';
 import { CallsGateway } from './calls.gateway';
 
+const STALE_THRESHOLD_MINUTES = 5;
+
 @Injectable()
 export class CallsService {
   private readonly logger = new Logger(CallsService.name);
@@ -28,16 +30,53 @@ export class CallsService {
   ) {}
 
   /**
+   * Cancel any calls for this agent that have been stuck in an active
+   * status for longer than STALE_THRESHOLD_MINUTES. Called automatically
+   * before every new call attempt and via the clear-stale endpoint.
+   *
+   * Returns the stale calls so the caller can attempt provider-side cleanup.
+   */
+  async cleanupStaleCalls(agentId: string) {
+    const cutoff = new Date(Date.now() - STALE_THRESHOLD_MINUTES * 60 * 1000);
+
+    const staleCalls = await this.prisma.call.findMany({
+      where: {
+        agentId,
+        status: { in: [CallStatus.INITIATING, CallStatus.RINGING, CallStatus.IN_PROGRESS] },
+        startedAt: { lt: cutoff },
+      },
+      select: { id: true, providerCallId: true },
+    });
+
+    if (staleCalls.length === 0) return staleCalls;
+
+    await this.prisma.call.updateMany({
+      where: { id: { in: staleCalls.map((c) => c.id) } },
+      data: { status: CallStatus.CANCELED, endedAt: new Date() },
+    });
+
+    this.logger.warn(
+      `Cleaned up ${staleCalls.length} stale call(s) for agent ${agentId}: [${staleCalls.map((c) => c.id).join(', ')}]`,
+    );
+
+    return staleCalls;
+  }
+
+  /**
    * Initiate an outbound call.
    *
    * Enforces:
-   *  1. Agent is not already on a call (concurrency lock)
-   *  2. Lead exists and belongs to agent
-   *  3. Lead is not marked as wrong number
-   *  4. Agent has an assigned phone number
+   *  1. Stale call cleanup (auto-cancels calls stuck > STALE_THRESHOLD_MINUTES)
+   *  2. Agent is not already on a call (concurrency lock)
+   *  3. Lead exists and belongs to agent
+   *  4. Lead is not marked as wrong number
+   *  5. Agent has an assigned phone number
    */
   async initiateCall(agentId: string, leadId: string) {
-    // 1. Concurrency lock — agent can only be on one call
+    // 1. Auto-cancel any stale calls before checking concurrency
+    await this.cleanupStaleCalls(agentId);
+
+    // 2. Concurrency lock — agent can only be on one call
     const activeCall = await this.prisma.call.findFirst({
       where: {
         agentId,
@@ -51,7 +90,7 @@ export class CallsService {
       throw new ConflictException('You already have an active call');
     }
 
-    // 2. Validate lead
+    // 3. Validate lead
     const lead = await this.prisma.lead.findUnique({
       where: { id: leadId },
     });
@@ -68,7 +107,7 @@ export class CallsService {
       throw new BadRequestException('This lead is marked as a wrong number');
     }
 
-    // 3. Get agent's assigned phone number
+    // 4. Get agent's assigned phone number
     const phoneNumber = await this.prisma.phoneNumber.findUnique({
       where: { assignedUserId: agentId },
     });
@@ -79,7 +118,7 @@ export class CallsService {
       );
     }
 
-    // 4. Create call record
+    // 5. Create call record
     const call = await this.prisma.call.create({
       data: {
         leadId,
@@ -90,7 +129,7 @@ export class CallsService {
       },
     });
 
-    // 5. Initiate call via telephony provider
+    // 6. Initiate call via telephony provider
     const webhookBaseUrl = this.configService.get<string>('WEBHOOK_BASE_URL');
 
     try {
@@ -100,7 +139,7 @@ export class CallsService {
         webhookUrl: `${webhookBaseUrl}/api/webhooks/twilio/voice`,
       });
 
-      // 6. Update call with provider ID
+      // 7. Update call with provider ID
       const updatedCall = await this.prisma.call.update({
         where: { id: call.id },
         data: {
@@ -110,7 +149,7 @@ export class CallsService {
         include: { lead: true },
       });
 
-      // 7. Notify agent via WebSocket
+      // 8. Notify agent via WebSocket
       this.callsGateway.sendCallStatus(agentId, {
         callId: updatedCall.id,
         status: CallStatus.RINGING,
@@ -165,6 +204,15 @@ export class CallsService {
 
     // Status will be updated via webhook callback
     return { message: 'Call end request sent' };
+  }
+
+  /**
+   * Tell the telephony provider to hang up a call by its provider ID.
+   * Used by the clear-stale endpoint — errors bubble up so the caller
+   * can decide whether to swallow them.
+   */
+  async endCallByProviderCallId(providerCallId: string): Promise<void> {
+    await this.telephony.endCall(providerCallId);
   }
 
   /**

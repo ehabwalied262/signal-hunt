@@ -6,6 +6,7 @@ export enum DispositionType {
   NO_ANSWER = 'NO_ANSWER',
   VOICEMAIL = 'VOICEMAIL',
   GATEKEEPER = 'GATEKEEPER',
+  OPT_OUT = 'OPT_OUT',
   OTHER = 'OTHER',
 }
 
@@ -38,5 +39,6 @@ export const DISPOSITION_LABELS: Record<DispositionType, string> = {
   [DispositionType.NO_ANSWER]: 'No Answer',
   [DispositionType.VOICEMAIL]: 'Voicemail',
   [DispositionType.GATEKEEPER]: 'Gatekeeper',
+  [DispositionType.OPT_OUT]: 'Opt Out',
   [DispositionType.OTHER]: 'Other',
 };

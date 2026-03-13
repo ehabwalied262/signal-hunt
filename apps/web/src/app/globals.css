@@ -1,26 +1,136 @@
 @import "tailwindcss";
 
+/* ============================================================
+   LIGHT MODE — parchment / off-white
+   ============================================================ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background:     #F5F4F0;
+  --foreground:     #1A1916;
+  --card-bg:        #FFFFFF;
+  --card-border:    #D9D7D0;
+  --sidebar-bg:     #ECEAE4;
+  --sidebar-border: #D9D7D0;
+  --topbar-bg:      #F5F4F0;
+  --topbar-border:  #D9D7D0;
+  --input-bg:       #FFFFFF;
+  --input-border:   #D9D7D0;
+  --hover-bg:       #F0EEE8;
+  --muted:          #6B6960;
+  --subtle:         #ECEAE4;
+  --table-header:   #F5F4F0;
+  --table-divider:  #E5E3DC;
+  --tag-bg:         #ECEAE4;
+  --tag-text:       #4A4840;
+  --dropdown-bg:    #FFFFFF;
+  --dropdown-border:#D9D7D0;
+
+  --accent:         #1668A8;
+  --accent-soft:    #E8F4FD;
+  --accent-text:    #1668A8;
+  --call-btn:       #1E8040;
+
+  --badge-new-bg:   #E8F4FD;
+  --badge-new-text: #1668A8;
+  --badge-int-bg:   #E8F5EC;
+  --badge-int-text: #1A7A3A;
+  --badge-cb-bg:    #FEF6E0;
+  --badge-cb-text:  #9A6400;
+  --badge-no-bg:    #FDECEA;
+  --badge-no-text:  #B02020;
+}
+
+/* Explicit light theme — mirrors :root so data-theme="light" activates these values */
+[data-theme='light'] {
+  --background:     #F5F4F0;
+  --foreground:     #1A1916;
+  --card-bg:        #FFFFFF;
+  --card-border:    #D9D7D0;
+  --sidebar-bg:     #ECEAE4;
+  --sidebar-border: #D9D7D0;
+  --topbar-bg:      #F5F4F0;
+  --topbar-border:  #D9D7D0;
+  --input-bg:       #FFFFFF;
+  --input-border:   #D9D7D0;
+  --hover-bg:       #F0EEE8;
+  --muted:          #6B6960;
+  --subtle:         #ECEAE4;
+  --table-header:   #F5F4F0;
+  --table-divider:  #E5E3DC;
+  --tag-bg:         #ECEAE4;
+  --tag-text:       #4A4840;
+  --dropdown-bg:    #FFFFFF;
+  --dropdown-border:#D9D7D0;
+
+  --accent:         #1668A8;
+  --accent-soft:    #E8F4FD;
+  --accent-text:    #1668A8;
+  --call-btn:       #1E8040;
+
+  --badge-new-bg:   #E8F4FD;
+  --badge-new-text: #1668A8;
+  --badge-int-bg:   #E8F5EC;
+  --badge-int-text: #1A7A3A;
+  --badge-cb-bg:    #FEF6E0;
+  --badge-cb-text:  #9A6400;
+  --badge-no-bg:    #FDECEA;
+  --badge-no-text:  #B02020;
+}
+
+/* ============================================================
+   DARK MODE — cool charcoal + blue accents
+   ============================================================ */
+[data-theme='dark'] {
+  --background:     #1A1C1E;
+  --foreground:     #E8E6E0;
+  --card-bg:        #242628;
+  --card-border:    #3A3C40;
+  --sidebar-bg:     #13151A;
+  --sidebar-border: #3A3C40;
+  --topbar-bg:      #1A1C1E;
+  --topbar-border:  #3A3C40;
+  --input-bg:       #1E2022;
+  --input-border:   #3A3C40;
+  --hover-bg:       #2E3035;
+  --muted:          #8A8880;
+  --subtle:         #2E3035;
+  --table-header:   #1E2022;
+  --table-divider:  #303235;
+  --tag-bg:         #2E3035;
+  --tag-text:       #A8A6A0;
+  --dropdown-bg:    #242628;
+  --dropdown-border:#3A3C40;
+
+  --accent:         #5BADEB;
+  --accent-soft:    #1A3652;
+  --accent-text:    #5BADEB;
+  --call-btn:       #1E8040;
+
+  --badge-new-bg:   #1A3652;
+  --badge-new-text: #5BADEB;
+  --badge-int-bg:   #183322;
+  --badge-int-text: #4EC375;
+  --badge-cb-bg:    #3A2800;
+  --badge-cb-text:  #E8A820;
+  --badge-no-bg:    #3D1A1A;
+  --badge-no-text:  #E87070;
+}
+
+/* ============================================================
+   BASE STYLES
+   ============================================================ */
+html, body {
+  background-color: var(--background);
+  color: var(--foreground);
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), Arial, Helvetica, sans-serif;
 }
 
-/*
- * Global base overrides
- *
- * 1. All clickable elements show a pointer cursor — never leave users wondering
- *    if something is clickable.
- *
- * 2. All form inputs use a solid dark text color. Without this, inputs inherit
- *    the body foreground which on some OS dark-mode settings renders as near-white
- *    on a white background (invisible text).
- */
+/* ============================================================
+   GLOBAL BASE OVERRIDES
+   ============================================================ */
 @layer base {
   button,
   [type='button'],
@@ -28,20 +138,142 @@ body {
   [type='submit'],
   [role='button'],
   label[for],
-  select {
+  select,
+  a {
     cursor: pointer;
   }
 
   input,
   textarea,
   select {
-    color: #111827; /* gray-900 — always readable on white backgrounds */
+    color: var(--foreground);
+    background-color: var(--input-bg);
+    border-color: var(--input-border);
+    transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease;
   }
 
-  /* Placeholder text — visibly lighter than real content */
   input::placeholder,
   textarea::placeholder {
-    color: #9ca3af; /* gray-400 */
+    color: var(--muted);
     opacity: 1;
   }
+}
+
+/* ============================================================
+   STATUS BADGE UTILITIES
+   Theme-aware: bg and text pull from CSS variables automatically.
+   ============================================================ */
+.badge-new  { background-color: var(--badge-new-bg);  color: var(--badge-new-text); }
+.badge-int  { background-color: var(--badge-int-bg);  color: var(--badge-int-text); }
+.badge-cb   { background-color: var(--badge-cb-bg);   color: var(--badge-cb-text);  }
+.badge-no   { background-color: var(--badge-no-bg);   color: var(--badge-no-text);  }
+.badge-tag  { background-color: var(--tag-bg);         color: var(--tag-text);       }
+
+/* Background-only variants — for icon circles where the icon sets its own color */
+.badge-bg-new { background-color: var(--badge-new-bg); }
+.badge-bg-int { background-color: var(--badge-int-bg); }
+.badge-bg-cb  { background-color: var(--badge-cb-bg);  }
+.badge-bg-no  { background-color: var(--badge-no-bg);  }
+
+/* ============================================================
+   TAILWIND CLASS OVERRIDES FOR DARK MODE
+   Fallback overrides for any remaining hardcoded Tailwind color
+   classes. Migrated badge classes now use the utilities above.
+   ============================================================ */
+
+/* --- Backgrounds --- */
+[data-theme='dark'] .bg-white              { background-color: var(--card-bg) !important; }
+[data-theme='dark'] .bg-gray-50            { background-color: var(--table-header) !important; }
+[data-theme='dark'] .bg-gray-100           { background-color: var(--hover-bg) !important; }
+[data-theme='dark'] .bg-gray-200           { background-color: var(--card-border) !important; }
+
+/* --- Borders --- */
+[data-theme='dark'] .border-gray-100       { border-color: var(--card-border) !important; }
+[data-theme='dark'] .border-gray-200       { border-color: var(--card-border) !important; }
+[data-theme='dark'] .border-gray-300       { border-color: var(--input-border) !important; }
+[data-theme='dark'] .divide-gray-100 > * + * { border-color: var(--table-divider) !important; }
+[data-theme='dark'] .divide-gray-200 > * + * { border-color: var(--table-divider) !important; }
+
+/* --- Text --- */
+[data-theme='dark'] .text-gray-900         { color: var(--foreground) !important; }
+[data-theme='dark'] .text-gray-800         { color: #D8D6D0 !important; }
+[data-theme='dark'] .text-gray-700         { color: #C0BEB8 !important; }
+[data-theme='dark'] .text-gray-600         { color: var(--muted) !important; }
+[data-theme='dark'] .text-gray-500         { color: var(--muted) !important; }
+[data-theme='dark'] .text-gray-400         { color: #6A6860 !important; }
+[data-theme='dark'] .text-gray-300         { color: #4A4840 !important; }
+
+/* --- Hover states --- */
+[data-theme='dark'] .hover\:bg-gray-50:hover  { background-color: var(--hover-bg) !important; }
+[data-theme='dark'] .hover\:bg-gray-100:hover { background-color: var(--hover-bg) !important; }
+[data-theme='dark'] .hover\:text-gray-700:hover { color: #D8D6D0 !important; }
+[data-theme='dark'] .hover\:text-gray-900:hover { color: var(--foreground) !important; }
+[data-theme='dark'] .hover\:text-gray-600:hover { color: #C0BEB8 !important; }
+
+/* --- Table --- */
+[data-theme='dark'] thead.bg-gray-50,
+[data-theme='dark'] .bg-gray-50           { background-color: var(--table-header) !important; }
+
+/* --- Industry / status tags --- */
+[data-theme='dark'] .bg-gray-100.text-gray-600,
+[data-theme='dark'] .bg-gray-100.text-gray-700 {
+  background-color: var(--tag-bg) !important;
+  color: var(--tag-text) !important;
+}
+
+/* --- Status pill overrides (legacy Tailwind → new palette variables) --- */
+[data-theme='dark'] .bg-blue-100          { background-color: var(--badge-new-bg) !important; }
+[data-theme='dark'] .text-blue-700        { color: var(--badge-new-text) !important; }
+[data-theme='dark'] .bg-green-100         { background-color: var(--badge-int-bg) !important; }
+[data-theme='dark'] .text-green-700       { color: var(--badge-int-text) !important; }
+[data-theme='dark'] .bg-red-100           { background-color: var(--badge-no-bg) !important; }
+[data-theme='dark'] .text-red-700         { color: var(--badge-no-text) !important; }
+[data-theme='dark'] .bg-yellow-100        { background-color: var(--badge-cb-bg) !important; }
+[data-theme='dark'] .text-yellow-700      { color: var(--badge-cb-text) !important; }
+[data-theme='dark'] .bg-orange-100        { background-color: var(--badge-no-bg) !important; }
+[data-theme='dark'] .text-orange-700      { color: var(--badge-no-text) !important; }
+[data-theme='dark'] .bg-purple-100        { background-color: #2e1065 !important; }
+[data-theme='dark'] .text-purple-700      { color: #d8b4fe !important; }
+[data-theme='dark'] .bg-amber-50          { background-color: var(--badge-cb-bg) !important; }
+[data-theme='dark'] .text-amber-700       { color: var(--badge-cb-text) !important; }
+[data-theme='dark'] .border-amber-200     { border-color: #5A4000 !important; }
+
+/* --- Blue accent elements --- */
+[data-theme='dark'] .bg-blue-50           { background-color: var(--badge-new-bg) !important; }
+[data-theme='dark'] .text-blue-600        { color: var(--accent) !important; }
+[data-theme='dark'] .hover\:text-blue-600:hover { color: var(--badge-new-text) !important; }
+[data-theme='dark'] .hover\:text-blue-700:hover { color: var(--badge-new-text) !important; }
+
+/* --- Green call button states --- */
+[data-theme='dark'] .bg-green-50          { background-color: var(--badge-int-bg) !important; }
+[data-theme='dark'] .text-green-600       { color: var(--badge-int-text) !important; }
+
+/* --- Disabled states --- */
+[data-theme='dark'] .bg-gray-300          { background-color: var(--card-border) !important; }
+[data-theme='dark'] .text-gray-500        { color: var(--muted) !important; }
+
+/* --- Dropdown & modal overlays --- */
+[data-theme='dark'] .shadow-lg  { box-shadow: 0 10px 40px rgba(0,0,0,0.6) !important; }
+[data-theme='dark'] .shadow-2xl { box-shadow: 0 25px 60px rgba(0,0,0,0.7) !important; }
+
+/* --- Links in sidebar (active state) --- */
+[data-theme='dark'] .bg-blue-50.text-blue-700 {
+  background-color: var(--badge-new-bg) !important;
+  color: var(--badge-new-text) !important;
+}
+
+/* ============================================================
+   SMOOTH TRANSITIONS
+   ============================================================ */
+*,
+*::before,
+*::after {
+  transition-property: background-color, border-color, color;
+  transition-duration: 0.25s;
+  transition-timing-function: ease;
+}
+
+/* Don't transition things that shouldn't animate */
+button, a, input, textarea, select {
+  transition-property: background-color, border-color, color, box-shadow, transform, opacity;
 }

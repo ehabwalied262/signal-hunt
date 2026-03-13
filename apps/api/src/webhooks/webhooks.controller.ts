@@ -7,6 +7,7 @@ import {
   Inject,
   Logger,
   SetMetadata,
+  VERSION_NEUTRAL,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { CallsService } from '../calls/calls.service';
@@ -27,7 +28,7 @@ import { WebhookGuard } from './webhooks.guard';
  * IMPORTANT: These routes are NOT behind JWT auth.
  * They are protected by webhook signature validation instead.
  */
-@Controller('webhooks/twilio')
+@Controller({ path: 'webhooks/twilio', version: VERSION_NEUTRAL })
 @SetMetadata('isPublic', true) // No JWT — protected by WebhookGuard
 @UseGuards(WebhookGuard)
 export class WebhooksController {

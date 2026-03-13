@@ -57,6 +57,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       token: null,
       isAuthenticated: false,
     });
+
+    // Redirect to login page
+    if (typeof window !== 'undefined') {
+      window.location.href = '/login';
+    }
   },
 
   loadFromStorage: () => {

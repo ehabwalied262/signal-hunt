@@ -9,48 +9,39 @@ import { DispositionForm } from './disposition-form';
 import { apiClient } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 
-/**
- * Floating call widget.
- *
- * Appears at the bottom-right of the screen when a call is active.
- * Shows:
- *   - Lead company name
- *   - Call status (Initiating / Ringing / On Call)
- *   - Live timer (starts when call is answered)
- *   - Hang Up button
- *
- * After the call ends, shows the DispositionForm modal.
- */
 export function CallWidget() {
-  const { activeCall, isOnCall, showDispositionForm, clearCall, setShowDisposition } =
-    useCallStore();
+  const { activeCall, isOnCall, showDispositionForm, clearCall } = useCallStore();
   const { endCall, submitDisposition } = useCall();
-  const [leadName, setLeadName] = useState<string>('');
+  const [leadInfo, setLeadInfo] = useState<{ contactName: string; companyName: string }>({
+    contactName: '',
+    companyName: '',
+  });
   const [isEnding, setIsEnding] = useState(false);
 
-  // Fetch lead name when call becomes active
   useEffect(() => {
     if (!activeCall?.leadId) {
-      setLeadName('');
+      setLeadInfo({ contactName: '', companyName: '' });
       return;
     }
-
     apiClient
       .get(`/leads/${activeCall.leadId}`)
       .then((res) => {
-        setLeadName(res.data.companyName || 'Unknown Lead');
+        setLeadInfo({
+          contactName: res.data.contactName || 'Unknown Contact',
+          companyName: res.data.companyName || '',
+        });
       })
       .catch(() => {
-        setLeadName('Lead');
+        setLeadInfo({ contactName: 'Lead', companyName: '' });
       });
   }, [activeCall?.leadId]);
 
   const handleEndCall = async () => {
     setIsEnding(true);
     try {
-      await endCall();
+      await endCall(activeCall?.callId);
     } catch {
-      // Error will be handled via WebSocket status update
+      // handled via WebSocket
     } finally {
       setIsEnding(false);
     }
@@ -70,12 +61,8 @@ export function CallWidget() {
     clearCall();
   };
 
-  // Don't render if no active call and no disposition form
-  if (!activeCall && !showDispositionForm) {
-    return null;
-  }
+  if (!activeCall && !showDispositionForm) return null;
 
-  // Show disposition form as a modal
   if (showDispositionForm && activeCall) {
     return (
       <DispositionForm
@@ -86,7 +73,6 @@ export function CallWidget() {
     );
   }
 
-  // Show the floating call widget
   if (!isOnCall || !activeCall) return null;
 
   const statusLabel =
@@ -96,39 +82,33 @@ export function CallWidget() {
         ? 'Ringing...'
         : 'On Call';
 
-  const statusColor =
-    activeCall.status === 'INITIATING'
-      ? 'bg-gray-500'
+  const statusBarColor =
+    activeCall.status === 'IN_PROGRESS'
+      ? 'bg-green-600'
       : activeCall.status === 'RINGING'
-        ? 'bg-yellow-500'
-        : 'bg-green-500';
+        ? 'bg-yellow-600'
+        : 'bg-gray-600';
+
+  const dotColor =
+    activeCall.status === 'IN_PROGRESS'
+      ? 'bg-green-400'
+      : activeCall.status === 'RINGING'
+        ? 'bg-yellow-400'
+        : 'bg-gray-400';
 
   return (
-    <div className="fixed bottom-6 right-6 z-40 w-80 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
+    <div
+      className="fixed bottom-6 right-6 z-40 w-80 overflow-hidden rounded-2xl shadow-2xl"
+      style={{
+        backgroundColor: 'var(--card-bg)',
+        border: '1px solid var(--card-border)',
+      }}
+    >
       {/* Status bar */}
-      <div
-        className={cn(
-          'flex items-center gap-2 px-4 py-2 text-sm font-medium text-white',
-          activeCall.status === 'IN_PROGRESS'
-            ? 'bg-green-600'
-            : activeCall.status === 'RINGING'
-              ? 'bg-yellow-600'
-              : 'bg-gray-600',
-        )}
-      >
+      <div className={cn('flex items-center gap-2 px-4 py-2 text-sm font-medium text-white', statusBarColor)}>
         <div className="relative flex h-2 w-2">
-          <span
-            className={cn(
-              'absolute inline-flex h-full w-full animate-ping rounded-full opacity-75',
-              statusColor,
-            )}
-          />
-          <span
-            className={cn(
-              'relative inline-flex h-2 w-2 rounded-full',
-              statusColor,
-            )}
-          />
+          <span className={cn('absolute inline-flex h-full w-full animate-ping rounded-full opacity-75', dotColor)} />
+          <span className={cn('relative inline-flex h-2 w-2 rounded-full', dotColor)} />
         </div>
         {statusLabel}
       </div>
@@ -137,15 +117,22 @@ export function CallWidget() {
       <div className="px-4 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-semibold text-gray-900">{leadName}</p>
-            <div className="mt-1 flex items-center gap-2">
+            <p className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>
+              {leadInfo.contactName}
+            </p>
+            {leadInfo.companyName && (
+              <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                {leadInfo.companyName}
+              </p>
+            )}
+            <div className="mt-1">
               {activeCall.status === 'IN_PROGRESS' ? (
                 <CallTimer
                   startFrom={activeCall.answeredAt}
                   isRunning={activeCall.status === 'IN_PROGRESS'}
                 />
               ) : (
-                <div className="flex items-center gap-1 text-sm text-gray-500">
+                <div className="flex items-center gap-1 text-sm" style={{ color: 'var(--muted)' }}>
                   {activeCall.status === 'RINGING' && (
                     <>
                       <Phone className="h-3.5 w-3.5 animate-bounce" />
@@ -163,7 +150,6 @@ export function CallWidget() {
             </div>
           </div>
 
-          {/* Hang up button */}
           <button
             onClick={handleEndCall}
             disabled={isEnding}
@@ -180,8 +166,11 @@ export function CallWidget() {
       </div>
 
       {/* Mock mode indicator */}
-      <div className="border-t border-gray-100 bg-amber-50 px-4 py-1.5">
-        <p className="text-center text-xs text-amber-600">
+      <div
+        className="border-t px-4 py-1.5"
+        style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--accent-soft)' }}
+      >
+        <p className="text-center text-xs" style={{ color: 'var(--accent-text)' }}>
           Mock Mode — No real call
         </p>
       </div>

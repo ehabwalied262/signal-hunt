@@ -23,6 +23,7 @@ enum LeadStatus {
   NOT_INTERESTED
   WRONG_NUMBER
   CALLBACK_SCHEDULED
+  OPT_OUT
 }
 
 enum CallStatus {
@@ -44,6 +45,7 @@ enum DispositionType {
   NO_ANSWER
   VOICEMAIL
   GATEKEEPER
+  OPT_OUT
   OTHER
 }
 
@@ -70,6 +72,14 @@ enum ImportStatus {
   COMPLETED
   FAILED
   AWAITING_DEDUP_REVIEW
+}
+
+enum ImportRowResolution {
+  PENDING
+  DUPLICATE
+  SKIP
+  MERGE
+  IMPORT
 }
 
 // ============================================
@@ -125,8 +135,14 @@ model Lead {
   headcount          Int?
   headcountGrowth6m  Decimal?   @map("headcount_growth_6m") @db.Decimal(5, 2)
   headcountGrowth12m Decimal?   @map("headcount_growth_12m") @db.Decimal(5, 2)
+  email              String?
+  website            String?
+  personalLinkedin   String?    @map("personal_linkedin")
+  companyLinkedin    String?    @map("company_linkedin")
+  industry           String?
   companyOverview    String?    @map("company_overview") @db.Text
   aiSummary          String?    @map("ai_summary") @db.Text
+  isOptOut           Boolean    @default(false) @map("is_opt_out")
   ownerId            String     @map("owner_id")
   status             LeadStatus @default(NEW)
   isWrongNumber      Boolean    @default(false) @map("is_wrong_number")
@@ -138,6 +154,7 @@ model Lead {
   owner        User       @relation(fields: [ownerId], references: [id])
   sourceImport CsvImport? @relation(fields: [sourceImportId], references: [id])
   calls        Call[]
+  importRows   CsvImportRow[]
 
   @@index([ownerId, status])
   @@index([phoneNumber])
@@ -217,13 +234,45 @@ model CsvImport {
   newLeads        Int          @default(0) @map("new_leads")
   duplicatesFound Int          @default(0) @map("duplicates_found")
   status          ImportStatus @default(PENDING)
-  duplicateData   Json?        @map("duplicate_data") // stores dups for merge review UI
   createdAt       DateTime     @default(now()) @map("created_at")
   updatedAt       DateTime     @updatedAt @map("updated_at")
 
   // Relations
-  uploader User   @relation(fields: [uploadedBy], references: [id])
+  uploader User           @relation(fields: [uploadedBy], references: [id])
   leads    Lead[]
+  rows     CsvImportRow[]
 
   @@map("csv_imports")
+}
+
+model CsvImportRow {
+  id                 String              @id @default(uuid())
+  importId           String              @map("import_id")
+  rowIndex           Int                 @map("row_index")
+  companyName        String              @map("company_name")
+  contactName        String?             @map("contact_name")
+  contactTitle       String?             @map("contact_title")
+  phoneNumber        String              @map("phone_number")
+  country            String?
+  location           String?
+  headcount          Int?
+  headcountGrowth6m  Decimal?            @map("headcount_growth_6m") @db.Decimal(5, 2)
+  headcountGrowth12m Decimal?            @map("headcount_growth_12m") @db.Decimal(5, 2)
+  email              String?
+  website            String?
+  personalLinkedin   String?             @map("personal_linkedin")
+  companyLinkedin    String?             @map("company_linkedin")
+  industry           String?
+  companyOverview    String?             @map("company_overview") @db.Text
+  existingLeadId     String?             @map("existing_lead_id")
+  resolution         ImportRowResolution @default(PENDING)
+  createdAt          DateTime            @default(now()) @map("created_at")
+
+  // Relations
+  csvImport    CsvImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+  existingLead Lead?     @relation(fields: [existingLeadId], references: [id], onDelete: SetNull)
+
+  @@index([importId, resolution])
+  @@index([importId, rowIndex])
+  @@map("csv_import_rows")
 }

@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { ImportStatus } from '@prisma/client';
+import { ImportStatus, ImportRowResolution } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { parseLeadFile, ParseResult } from './csv-parser.util';
 
@@ -19,10 +19,10 @@ export class ImportsService {
     @InjectQueue('csv-import') private importQueue: Queue,
   ) {}
 
-  /**
-   * Handle file upload: parse, validate, check for duplicates,
-   * then either enqueue for processing or return duplicates for review.
-   */
+  // ────────────────────────────────────────────────
+  // Upload
+  // ────────────────────────────────────────────────
+
   async uploadFile(
     file: Express.Multer.File,
     uploadedBy: string,
@@ -32,7 +32,7 @@ export class ImportsService {
       'text/csv',
       'application/vnd.ms-excel',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/octet-stream', // Some systems send CSV as this
+      'application/octet-stream',
     ];
 
     if (!allowedMimes.includes(file.mimetype)) {
@@ -75,38 +75,67 @@ export class ImportsService {
     const duplicateRows = parseResult.rows.filter((r) =>
       duplicateMap.has(r.phoneNumber),
     );
+    const hasDuplicates = duplicateRows.length > 0;
 
-    // Create import record
-    const csvImport = await this.prisma.csvImport.create({
-      data: {
-        uploadedBy,
-        filename: file.originalname,
-        totalRows: parseResult.totalRows,
-        duplicatesFound: duplicateRows.length,
-        status:
-          duplicateRows.length > 0
-            ? ImportStatus.AWAITING_DEDUP_REVIEW
-            : ImportStatus.PENDING,
-        duplicateData:
-          duplicateRows.length > 0
-            ? {
-                duplicates: duplicateRows.map((row) => ({
-                  incoming: {
-                    companyName: row.companyName,
-                    contactName: row.contactName,
-                    phoneNumber: row.phoneNumber,
-                    rowIndex: row.rowIndex,
-                  },
-                  existing: duplicateMap.get(row.phoneNumber),
-                })),
-              }
-            : undefined,
+    // Create import record + all import rows in a single transaction
+    const csvImport = await this.prisma.$transaction(
+      async (tx) => {
+        const imp = await tx.csvImport.create({
+          data: {
+            uploadedBy,
+            filename: file.originalname,
+            totalRows: parseResult.totalRows,
+            duplicatesFound: duplicateRows.length,
+            status: hasDuplicates
+              ? ImportStatus.AWAITING_DEDUP_REVIEW
+              : ImportStatus.PENDING,
+          },
+        });
+
+        // Insert ALL rows (new + duplicate) into csv_import_rows.
+        // Batch createMany in chunks of 2000 to stay under PG parameter limits.
+        const ROW_BATCH = 2000;
+        for (let i = 0; i < parseResult.rows.length; i += ROW_BATCH) {
+          const batch = parseResult.rows.slice(i, i + ROW_BATCH);
+
+          await tx.csvImportRow.createMany({
+            data: batch.map((row) => {
+              const existing = duplicateMap.get(row.phoneNumber);
+              return {
+                importId: imp.id,
+                rowIndex: row.rowIndex,
+                companyName: row.companyName,
+                contactName: row.contactName,
+                contactTitle: row.contactTitle,
+                phoneNumber: row.phoneNumber,
+                country: row.country,
+                location: row.location,
+                headcount: row.headcount,
+                headcountGrowth6m: row.headcountGrowth6m,
+                headcountGrowth12m: row.headcountGrowth12m,
+                email: row.email,
+                website: row.website,
+                personalLinkedin: row.personalLinkedin,
+                companyLinkedin: row.companyLinkedin,
+                industry: row.industry,
+                companyOverview: row.companyOverview,
+                existingLeadId: existing ? existing.id : null,
+                resolution: existing
+                  ? ImportRowResolution.DUPLICATE
+                  : ImportRowResolution.PENDING,
+              };
+            }),
+          });
+        }
+
+        return imp;
       },
-    });
+      { timeout: 30_000 }, // 30 s for large files
+    );
 
     // If no duplicates, enqueue immediately
-    if (duplicateRows.length === 0) {
-      await this.enqueueImport(csvImport.id, newRows, uploadedBy);
+    if (!hasDuplicates) {
+      await this.enqueueImport(csvImport.id, uploadedBy);
 
       return {
         importId: csvImport.id,
@@ -119,43 +148,6 @@ export class ImportsService {
     }
 
     // Has duplicates — return for review
-    // Store valid non-duplicate rows in queue payload for later
-    await this.prisma.csvImport.update({
-      where: { id: csvImport.id },
-      data: {
-        duplicateData: {
-          duplicates: duplicateRows.map((row) => ({
-            incoming: {
-              companyName: row.companyName,
-              contactName: row.contactName,
-              contactTitle: row.contactTitle,
-              phoneNumber: row.phoneNumber,
-              country: row.country,
-              location: row.location,
-              headcount: row.headcount,
-              headcountGrowth6m: row.headcountGrowth6m,
-              headcountGrowth12m: row.headcountGrowth12m,
-              companyOverview: row.companyOverview,
-              rowIndex: row.rowIndex,
-            },
-            existing: duplicateMap.get(row.phoneNumber),
-          })),
-          newRows: newRows.map((r) => ({
-            companyName: r.companyName,
-            contactName: r.contactName,
-            contactTitle: r.contactTitle,
-            phoneNumber: r.phoneNumber,
-            country: r.country,
-            location: r.location,
-            headcount: r.headcount,
-            headcountGrowth6m: r.headcountGrowth6m,
-            headcountGrowth12m: r.headcountGrowth12m,
-            companyOverview: r.companyOverview,
-          })),
-        },
-      },
-    });
-
     return {
       importId: csvImport.id,
       status: 'awaiting_review',
@@ -173,12 +165,10 @@ export class ImportsService {
     };
   }
 
-  /**
-   * After user reviews duplicates, they decide per duplicate:
-   *   - skip: don't import the duplicate row
-   *   - merge: update existing lead with new data
-   *   - import: create as new lead anyway (override dedup)
-   */
+  // ────────────────────────────────────────────────
+  // Resolve Duplicates
+  // ────────────────────────────────────────────────
+
   async resolveDuplicates(
     importId: string,
     userId: string,
@@ -199,59 +189,83 @@ export class ImportsService {
       throw new BadRequestException('Import is not awaiting review');
     }
 
-    const duplicateData = csvImport.duplicateData as any;
-    if (!duplicateData) {
-      throw new BadRequestException('No duplicate data found');
+    // Fetch all DUPLICATE rows for this import
+    const duplicateRows = await this.prisma.csvImportRow.findMany({
+      where: { importId, resolution: ImportRowResolution.DUPLICATE },
+    });
+
+    if (duplicateRows.length === 0) {
+      throw new BadRequestException('No duplicate rows found for this import');
     }
 
     const decisionMap = new Map(
       decisions.map((d) => [d.phoneNumber, d.action]),
     );
 
-    // Process merge decisions immediately
-    for (const dup of duplicateData.duplicates) {
-      const action = decisionMap.get(dup.incoming.phoneNumber) || 'skip';
+    // Process all decisions in a transaction
+    await this.prisma.$transaction(async (tx) => {
+      for (const row of duplicateRows) {
+        const action = decisionMap.get(row.phoneNumber) || 'skip';
 
-      if (action === 'merge') {
-        // Update existing lead with incoming data
-        await this.prisma.lead.update({
-          where: { id: dup.existing.id },
-          data: {
-            companyName: dup.incoming.companyName || undefined,
-            contactName: dup.incoming.contactName || undefined,
-            contactTitle: dup.incoming.contactTitle || undefined,
-            country: dup.incoming.country || undefined,
-            location: dup.incoming.location || undefined,
-            headcount: dup.incoming.headcount || undefined,
-            headcountGrowth6m: dup.incoming.headcountGrowth6m || undefined,
-            headcountGrowth12m: dup.incoming.headcountGrowth12m || undefined,
-            companyOverview: dup.incoming.companyOverview || undefined,
-          },
-        });
+        if (action === 'merge' && row.existingLeadId) {
+          // Update existing lead with ALL 15 incoming fields
+          await tx.lead.update({
+            where: { id: row.existingLeadId },
+            data: {
+              companyName: row.companyName || undefined,
+              contactName: row.contactName || undefined,
+              contactTitle: row.contactTitle || undefined,
+              country: row.country || undefined,
+              location: row.location || undefined,
+              headcount: row.headcount || undefined,
+              headcountGrowth6m: row.headcountGrowth6m || undefined,
+              headcountGrowth12m: row.headcountGrowth12m || undefined,
+              companyOverview: row.companyOverview || undefined,
+              email: row.email || undefined,
+              website: row.website || undefined,
+              personalLinkedin: row.personalLinkedin || undefined,
+              companyLinkedin: row.companyLinkedin || undefined,
+              industry: row.industry || undefined,
+            },
+          });
+
+          await tx.csvImportRow.update({
+            where: { id: row.id },
+            data: { resolution: ImportRowResolution.MERGE },
+          });
+        } else if (action === 'import') {
+          await tx.csvImportRow.update({
+            where: { id: row.id },
+            data: { resolution: ImportRowResolution.IMPORT },
+          });
+        } else {
+          // Default: skip
+          await tx.csvImportRow.update({
+            where: { id: row.id },
+            data: { resolution: ImportRowResolution.SKIP },
+          });
+        }
       }
-    }
 
-    // Collect rows to import:
-    // 1. All non-duplicate rows (already stored in duplicateData.newRows)
-    // 2. Duplicate rows where user chose "import"
-    const rowsToImport = [
-      ...(duplicateData.newRows || []),
-      ...duplicateData.duplicates
-        .filter(
-          (d: any) =>
-            decisionMap.get(d.incoming.phoneNumber) === 'import',
-        )
-        .map((d: any) => d.incoming),
-    ];
-
-    // Update import status and enqueue
-    await this.prisma.csvImport.update({
-      where: { id: importId },
-      data: { status: ImportStatus.PENDING },
+      // Transition import out of review
+      await tx.csvImport.update({
+        where: { id: importId },
+        data: { status: ImportStatus.PENDING },
+      });
     });
 
-    if (rowsToImport.length > 0) {
-      await this.enqueueImport(importId, rowsToImport, userId);
+    // Count importable rows: PENDING (non-dup) + IMPORT (user chose import)
+    const importableCount = await this.prisma.csvImportRow.count({
+      where: {
+        importId,
+        resolution: {
+          in: [ImportRowResolution.PENDING, ImportRowResolution.IMPORT],
+        },
+      },
+    });
+
+    if (importableCount > 0) {
+      await this.enqueueImport(importId, userId);
     } else {
       // Nothing to import — mark as completed
       await this.prisma.csvImport.update({
@@ -266,16 +280,17 @@ export class ImportsService {
 
     return {
       importId,
-      status: rowsToImport.length > 0 ? 'processing' : 'completed',
-      rowsToImport: rowsToImport.length,
+      status: importableCount > 0 ? 'processing' : 'completed',
+      rowsToImport: importableCount,
       merged: decisions.filter((d) => d.action === 'merge').length,
       skipped: decisions.filter((d) => d.action === 'skip').length,
     };
   }
 
-  /**
-   * Get import status.
-   */
+  // ────────────────────────────────────────────────
+  // Read helpers
+  // ────────────────────────────────────────────────
+
   async getImportStatus(importId: string) {
     const csvImport = await this.prisma.csvImport.findUnique({
       where: { id: importId },
@@ -297,9 +312,6 @@ export class ImportsService {
     };
   }
 
-  /**
-   * Get all imports for a user (or all imports for admin).
-   */
   async getImports(userId: string, isAdmin: boolean) {
     return this.prisma.csvImport.findMany({
       where: isAdmin ? {} : { uploadedBy: userId },
@@ -318,26 +330,28 @@ export class ImportsService {
     });
   }
 
+  // ────────────────────────────────────────────────
+  // Private helpers
+  // ────────────────────────────────────────────────
+
   private parseFile(file: Express.Multer.File): ParseResult {
     return parseLeadFile(file.buffer, file.originalname);
   }
 
-  private async enqueueImport(
-    importId: string,
-    rows: any[],
-    ownerId: string,
-  ) {
+  /**
+   * Enqueue a lightweight job — the processor reads rows from CsvImportRow.
+   * No row data in Redis, just two UUIDs.
+   */
+  private async enqueueImport(importId: string, ownerId: string) {
     await this.importQueue.add(
       'process-csv',
-      { importId, rows, ownerId },
+      { importId, ownerId },
       {
         attempts: 3,
         backoff: { type: 'exponential', delay: 5000 },
       },
     );
 
-    this.logger.log(
-      `Enqueued CSV import ${importId} with ${rows.length} rows`,
-    );
+    this.logger.log(`Enqueued CSV import ${importId}`);
   }
 }

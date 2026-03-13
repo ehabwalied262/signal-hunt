@@ -11,7 +11,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
  * WebSocket hook for real-time call status updates.
  *
  * Connects to the NestJS /calls namespace with the current user's ID.
- * Listens for call:status events and updates the call store.
+ * Falls back to polling transport if websocket fails.
  *
  * Usage: Call once at the dashboard layout level.
  */
@@ -24,10 +24,17 @@ export function useSocket() {
     if (!user?.id) return;
 
     // Connect to the /calls namespace
+    // Start with polling first (more reliable), then upgrade to websocket
     const socket = io(`${API_URL}/calls`, {
       query: { userId: user.id },
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
+      upgrade: true,
       autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 10000,
     });
 
     socketRef.current = socket;
@@ -41,7 +48,8 @@ export function useSocket() {
     });
 
     socket.on('connect_error', (error) => {
-      console.error('[WS] Connection error:', error.message);
+      console.warn('[WS] Connection error:', error.message);
+      // Socket.io will auto-retry with reconnection config
     });
 
     // Listen for call status updates from the server

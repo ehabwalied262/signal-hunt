@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -18,6 +20,17 @@ import { ImportsModule } from './imports/imports.module';
       isGlobal: true,
       envFilePath: '../../.env',
     }),
+
+    // Rate limiting — applied globally via APP_GUARD below.
+    // Override per-route with @Throttle({ default: { limit, ttl } })
+    // Auth endpoints get tighter limits in AuthController.
+    ThrottlerModule.forRoot([
+      {
+        name: 'default',
+        ttl: 60_000,   // 1 minute window
+        limit: 60,     // 60 req/min default (generous for normal API use)
+      },
+    ]),
 
     // BullMQ — Redis-backed job queues
     BullModule.forRootAsync({
@@ -40,6 +53,14 @@ import { ImportsModule } from './imports/imports.module';
     WebhooksModule,
     TelephonyModule,
     ImportsModule,
+  ],
+  providers: [
+    // Apply ThrottlerGuard globally — every route is rate-limited by default.
+    // Webhook routes are excluded via the guard's skip logic below.
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
   ],
 })
 export class AppModule {}

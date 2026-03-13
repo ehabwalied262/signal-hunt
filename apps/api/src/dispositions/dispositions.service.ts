@@ -7,6 +7,7 @@ import {
 import { DispositionType, LeadStatus, CallStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDispositionDto } from './dto/create-disposition.dto';
+import { UpdateDispositionDto } from './dto/update-disposition.dto';
 
 @Injectable()
 export class DispositionsService {
@@ -50,12 +51,26 @@ export class DispositionsService {
     }
 
     // Map disposition type to lead status
-    const leadStatusMap: Partial<Record<DispositionType, LeadStatus>> = {
-      [DispositionType.INTERESTED]: LeadStatus.INTERESTED,
-      [DispositionType.NOT_INTERESTED]: LeadStatus.NOT_INTERESTED,
-      [DispositionType.WRONG_NUMBER]: LeadStatus.WRONG_NUMBER,
-      [DispositionType.CALLBACK]: LeadStatus.CALLBACK_SCHEDULED,
+    // Note: OPT_OUT enum values will be available after running db:generate
+    const leadStatusMap: Record<string, string> = {
+      INTERESTED: 'INTERESTED',
+      NOT_INTERESTED: 'NOT_INTERESTED',
+      WRONG_NUMBER: 'WRONG_NUMBER',
+      CALLBACK: 'CALLBACK_SCHEDULED',
+      OPT_OUT: 'OPT_OUT',
     };
+
+    // Build lead update data
+    const dtoType = dto.type as string;
+    const leadUpdateData: Record<string, any> = {
+      status: leadStatusMap[dtoType] || LeadStatus.CONTACTED,
+      isWrongNumber: dtoType === 'WRONG_NUMBER',
+    };
+
+    // Flag opt-out leads
+    if (dtoType === 'OPT_OUT') {
+      leadUpdateData.isOptOut = true;
+    }
 
     // Create disposition and update lead in a transaction
     const [disposition] = await this.prisma.$transaction([
@@ -70,17 +85,41 @@ export class DispositionsService {
             : undefined,
         },
       }),
-      // Update lead status based on disposition
       this.prisma.lead.update({
         where: { id: call.leadId },
-        data: {
-          status: leadStatusMap[dto.type] || LeadStatus.CONTACTED,
-          // Flag wrong numbers
-          isWrongNumber: dto.type === DispositionType.WRONG_NUMBER,
-        },
+        data: leadUpdateData,
       }),
     ]);
 
     return disposition;
+  }
+
+  /**
+   * Update an existing disposition (edit notes, pain points, etc.).
+   */
+  async update(dispositionId: string, agentId: string, dto: UpdateDispositionDto) {
+    const disposition = await this.prisma.disposition.findUnique({
+      where: { id: dispositionId },
+      include: {
+        call: { select: { agentId: true } },
+      },
+    });
+
+    if (!disposition) {
+      throw new NotFoundException('Disposition not found');
+    }
+
+    // Only the agent who made the call can edit
+    if (disposition.call.agentId !== agentId) {
+      throw new BadRequestException('You can only edit your own dispositions');
+    }
+
+    return this.prisma.disposition.update({
+      where: { id: dispositionId },
+      data: {
+        notes: dto.notes !== undefined ? dto.notes : undefined,
+        painPoints: dto.painPoints !== undefined ? dto.painPoints : undefined,
+      },
+    });
   }
 }

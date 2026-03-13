@@ -78,25 +78,22 @@ const DISPOSITIONS = [
     activeColor: 'bg-gray-100 border-gray-500 ring-2 ring-gray-500/20',
   },
   {
+    type: 'OPT_OUT',
+    label: 'Opt Out',
+    icon: X,
+    color: 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100',
+    activeColor: 'bg-orange-100 border-orange-500 ring-2 ring-orange-500/20',
+  },
+  {
     type: 'OTHER',
     label: 'Other',
     icon: HelpCircle,
-    color: 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100',
-    activeColor: 'bg-slate-100 border-slate-500 ring-2 ring-slate-500/20',
+    color: 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100',
+    activeColor: 'bg-gray-100 border-gray-500 ring-2 ring-gray-500/20',
   },
 ];
 
-/**
- * Post-call disposition form.
- *
- * Appears after a call ends. Agent must select a disposition type
- * and optionally add notes/pain points.
- */
-export function DispositionForm({
-  callId,
-  onSubmit,
-  onSkip,
-}: DispositionFormProps) {
+export function DispositionForm({ callId, onSubmit, onSkip }: DispositionFormProps) {
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
   const [painPoints, setPainPoints] = useState('');
@@ -105,7 +102,6 @@ export function DispositionForm({
 
   const handleSubmit = async () => {
     if (!selectedType) return;
-
     setIsSubmitting(true);
     try {
       await onSubmit({
@@ -116,28 +112,44 @@ export function DispositionForm({
         callbackScheduledAt: callbackDate || undefined,
       });
     } catch {
-      // Error handled by parent
+      // handled by parent
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="mx-4 w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div
+        className="mx-4 w-full max-w-lg rounded-2xl shadow-2xl"
+        style={{
+          backgroundColor: 'var(--card-bg)',
+          border: '1px solid var(--card-border)',
+        }}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+        <div
+          className="flex items-center justify-between px-6 py-4"
+          style={{ borderBottom: '1px solid var(--card-border)' }}
+        >
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">
+            <h2 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>
               Call Disposition
             </h2>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm" style={{ color: 'var(--muted)' }}>
               How did the call go?
             </p>
           </div>
           <button
             onClick={onSkip}
-            className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+            className="rounded-lg p-2 transition-colors"
+            style={{ color: 'var(--muted)' }}
+            onMouseEnter={(e) =>
+              ((e.currentTarget as HTMLElement).style.backgroundColor = 'var(--hover-bg)')
+            }
+            onMouseLeave={(e) =>
+              ((e.currentTarget as HTMLElement).style.backgroundColor = 'transparent')
+            }
           >
             <X className="h-5 w-5" />
           </button>
@@ -165,65 +177,101 @@ export function DispositionForm({
             })}
           </div>
 
-          {/* Callback date picker — only shown for CALLBACK disposition */}
           {selectedType === 'CALLBACK' && (
             <div className="mt-4">
-              <label className="mb-1 block text-sm font-medium text-gray-700">
+              <label
+                className="mb-1 block text-sm font-medium"
+                style={{ color: 'var(--foreground)' }}
+              >
                 Callback Date & Time
               </label>
               <input
                 type="datetime-local"
                 value={callbackDate}
                 onChange={(e) => setCallbackDate(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                style={{
+                  backgroundColor: 'var(--input-bg)',
+                  borderColor: 'var(--input-border)',
+                  color: 'var(--foreground)',
+                }}
               />
             </div>
           )}
 
-          {/* Notes */}
           <div className="mt-4">
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              Notes <span className="font-normal text-gray-400">(optional)</span>
+            <label
+              className="mb-1 block text-sm font-medium"
+              style={{ color: 'var(--foreground)' }}
+            >
+              Notes{' '}
+              <span className="font-normal" style={{ color: 'var(--muted)' }}>
+                (optional)
+              </span>
             </label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
               placeholder="Key takeaways from the call..."
-              className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full resize-none rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              style={{
+                backgroundColor: 'var(--input-bg)',
+                borderColor: 'var(--input-border)',
+                color: 'var(--foreground)',
+              }}
             />
           </div>
 
-          {/* Pain points — shown for INTERESTED and CALLBACK */}
           {(selectedType === 'INTERESTED' || selectedType === 'CALLBACK') && (
             <div className="mt-3">
-              <label className="mb-1 block text-sm font-medium text-gray-700">
+              <label
+                className="mb-1 block text-sm font-medium"
+                style={{ color: 'var(--foreground)' }}
+              >
                 Pain Points{' '}
-                <span className="font-normal text-gray-400">(optional)</span>
+                <span className="font-normal" style={{ color: 'var(--muted)' }}>
+                  (optional)
+                </span>
               </label>
               <textarea
                 value={painPoints}
                 onChange={(e) => setPainPoints(e.target.value)}
                 rows={2}
                 placeholder="What problems are they trying to solve?"
-                className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full resize-none rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                style={{
+                  backgroundColor: 'var(--input-bg)',
+                  borderColor: 'var(--input-border)',
+                  color: 'var(--foreground)',
+                }}
               />
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 border-t border-gray-100 px-6 py-4">
+        <div
+          className="flex items-center justify-end gap-3 px-6 py-4"
+          style={{ borderTop: '1px solid var(--card-border)' }}
+        >
           <button
             onClick={onSkip}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100"
+            className="rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+            style={{ color: 'var(--muted)' }}
+            onMouseEnter={(e) =>
+              ((e.currentTarget as HTMLElement).style.backgroundColor = 'var(--hover-bg)')
+            }
+            onMouseLeave={(e) =>
+              ((e.currentTarget as HTMLElement).style.backgroundColor = 'transparent')
+            }
           >
             Skip for now
           </button>
           <button
             onClick={handleSubmit}
             disabled={!selectedType || isSubmitting}
-            className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+            className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
             Save Disposition
