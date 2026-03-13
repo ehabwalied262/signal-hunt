@@ -18,21 +18,14 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
-  /**
-   * Register a new user.
-   * Only ADMIN can register other admins (enforced at controller level).
-   */
   async register(dto: RegisterDto) {
-    // Check if email already exists
     const existing = await this.usersService.findByEmail(dto.email);
     if (existing) {
       throw new ConflictException('Email already registered');
     }
 
-    // Hash password
     const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
 
-    // Create user
     const user = await this.usersService.create({
       email: dto.email,
       passwordHash,
@@ -40,23 +33,17 @@ export class AuthService {
       role: dto.role,
     });
 
-    // Generate token
-    const token = this.generateToken(user);
-
-    return {
+    return {                                             // ← token removed from body; controller sets cookie
       user: {
         id: user.id,
         email: user.email,
         fullName: user.fullName,
         role: user.role,
       },
-      accessToken: token,
+      token: this.generateToken(user),                  // ← still returned so controller can set the cookie
     };
   }
 
-  /**
-   * Authenticate user with email + password.
-   */
   async login(dto: LoginDto) {
     const user = await this.usersService.findByEmail(dto.email);
 
@@ -74,22 +61,17 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    const token = this.generateToken(user);
-
-    return {
+    return {                                             // ← same shape as register
       user: {
         id: user.id,
         email: user.email,
         fullName: user.fullName,
         role: user.role,
       },
-      accessToken: token,
+      token: this.generateToken(user),
     };
   }
 
-  /**
-   * Get current user profile from JWT payload.
-   */
   async getProfile(userId: string) {
     const user = await this.usersService.findById(userId);
 
@@ -107,13 +89,20 @@ export class AuthService {
     };
   }
 
+  /** Short-lived token for the WebSocket handshake only (1 h). */
+  async signWsToken(userId: string, role: string): Promise<{ token: string }> {
+    const token = this.jwtService.sign(
+      { sub: userId, role },
+      { expiresIn: '1h' },
+    );
+    return { token };
+  }
+
   private generateToken(user: { id: string; email: string; role: string }) {
-    const payload = {
+    return this.jwtService.sign({
       sub: user.id,
       email: user.email,
       role: user.role,
-    };
-
-    return this.jwtService.sign(payload);
+    });
   }
 }

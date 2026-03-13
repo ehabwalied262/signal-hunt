@@ -2,10 +2,11 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
+import { Request } from 'express';                      
 import { UsersService } from '../users/users.service';
 
 export interface JwtPayload {
-  sub: string; // user ID
+  sub: string;
   email: string;
   role: string;
 }
@@ -17,15 +18,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private usersService: UsersService,
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: (req: Request) =>                
+        req?.cookies?.signalhunt_token ?? null,
       ignoreExpiration: false,
       secretOrKey: configService.get<string>('JWT_SECRET'),
+      passReqToCallback: false,
     });
   }
 
-  /**
-   * Called after JWT is verified. Return value is attached to request.user
-   */
   async validate(payload: JwtPayload) {
     const user = await this.usersService.findById(payload.sub);
 

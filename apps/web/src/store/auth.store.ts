@@ -10,18 +10,16 @@ interface User {
 
 interface AuthState {
   user: User | null;
-  token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
 
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
-  loadFromStorage: () => void;
+  logout: () => Promise<void>;
+  loadFromStorage: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
-  token: null,
   isLoading: false,
   isAuthenticated: false,
 
@@ -29,16 +27,15 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isLoading: true });
 
     try {
+      // Cookie is set by the server — no token handling needed here
       const response = await apiClient.post('/auth/login', { email, password });
-      const { user, accessToken } = response.data;
+      const { user } = response.data;
 
-      // Persist to localStorage
-      localStorage.setItem('signalhunt_token', accessToken);
-      localStorage.setItem('signalhunt_user', JSON.stringify(user));
+      // Fetch CSRF token now that we're authenticated
+      await apiClient.get('/auth/csrf-token');
 
       set({
         user,
-        token: accessToken,
         isAuthenticated: true,
         isLoading: false,
       });
@@ -48,37 +45,37 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  logout: () => {
-    localStorage.removeItem('signalhunt_token');
-    localStorage.removeItem('signalhunt_user');
+  logout: async () => {
+    try {
+      // Tell the server to clear the httpOnly cookie
+      await apiClient.post('/auth/logout');
+    } catch {
+      // Continue with client-side cleanup even if server call fails
+    }
 
     set({
       user: null,
-      token: null,
       isAuthenticated: false,
     });
 
-    // Redirect to login page
     if (typeof window !== 'undefined') {
       window.location.href = '/login';
     }
   },
 
-  loadFromStorage: () => {
-    if (typeof window === 'undefined') return;
+  loadFromStorage: async () => {
+    try {
+      // Verify the cookie is still valid by fetching the profile
+      const response = await apiClient.get('/auth/profile');
+      const user = response.data;
 
-    const token = localStorage.getItem('signalhunt_token');
-    const userStr = localStorage.getItem('signalhunt_user');
+      // Refresh CSRF token on page load
+      await apiClient.get('/auth/csrf-token');
 
-    if (token && userStr) {
-      try {
-        const user = JSON.parse(userStr);
-        set({ user, token, isAuthenticated: true });
-      } catch {
-        // Corrupt storage — clear it
-        localStorage.removeItem('signalhunt_token');
-        localStorage.removeItem('signalhunt_user');
-      }
+      set({ user, isAuthenticated: true });
+    } catch {
+      // Cookie missing or expired — stay logged out
+      set({ user: null, isAuthenticated: false });
     }
   },
 }));

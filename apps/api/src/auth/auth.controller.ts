@@ -7,8 +7,12 @@ import {
   HttpCode,
   HttpStatus,
   SetMetadata,
+  Res,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
+import { randomBytes } from 'crypto';
+import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -18,21 +22,18 @@ import { Serialize } from '../common/interceptors/serialize.interceptor';
 import { AuthResponseDto } from '../common/dto/auth-response.dto';
 import { UserResponseDto } from '../common/dto/user-response.dto';
 
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'strict' as const,
+  maxAge: 24 * 60 * 60 * 1000,
+  path: '/',
+};
+
 @Controller({ path: 'auth', version: '1' })
 export class AuthController {
   constructor(private authService: AuthService) {}
 
-  /**
-   * POST /api/v1/auth/register
-   *
-   * Requires a valid JWT + ADMIN role — only admins can create new accounts.
-   * This prevents open self-registration in production.
-   *
-   * To bootstrap the first admin, seed the DB directly or temporarily
-   * comment out @UseGuards(JwtAuthGuard) during initial setup.
-   *
-   * Rate limit: 5 attempts/min (brute-force/enumeration protection).
-   */
   @Post('register')
   @UseGuards(JwtAuthGuard)
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
@@ -40,34 +41,87 @@ export class AuthController {
   async register(
     @CurrentUser('role') role: string,
     @Body() dto: RegisterDto,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    // Inline role check — swap for a dedicated @Roles + RolesGuard
-    // once you add the roles system.
     if (role !== 'ADMIN') {
-      const { ForbiddenException } = await import('@nestjs/common');
       throw new ForbiddenException('Only admins can register new users');
     }
-    return this.authService.register(dto);
+    const result = await this.authService.register(dto);
+    res.cookie('signalhunt_token', result.token, COOKIE_OPTIONS);
+    return result;
   }
 
-  /**
-   * POST /api/v1/auth/login
-   *
-   * Rate limit: 10 attempts/min — slows credential stuffing without
-   * locking out legitimate users who mistype a password.
-   */
   @Post('login')
   @SetMetadata('isPublic', true)
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @Serialize(AuthResponseDto)
-  async login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  async login(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.login(dto);
+    res.cookie('signalhunt_token', result.token, COOKIE_OPTIONS);
+    return result;
+  }
+  
+/**
+ * POST /api/v1/auth/logout
+ *
+ * Clears the httpOnly cookie. No body needed.
+ */
+
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  @SkipThrottle()
+  @HttpCode(HttpStatus.OK)
+  async logout(@Res({ passthrough: true }) res: Response) {
+    res.clearCookie('signalhunt_token', { path: '/' });
+    res.clearCookie('csrf_token', { path: '/' });
+    return { message: 'Logged out' };
   }
 
   /**
-   * GET /api/v1/auth/profile
+   * GET /api/v1/auth/csrf-token
+   *
+   * Sets a non-httpOnly csrf_token cookie that the frontend JS can read
+   * and attach as x-csrf-token header on every state-changing request.
+   * Called once after login and once on page load.
    */
+  @Get('csrf-token')
+  @SetMetadata('isPublic', true)
+  @SkipThrottle()
+  getCsrfToken(@Res({ passthrough: true }) res: Response) {
+    const token = randomBytes(32).toString('hex');
+
+    res.cookie('csrf_token', token, {
+      httpOnly: false,          // must be false — JS needs to read this one
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000,
+      path: '/',
+    });
+
+    return { csrfToken: token };
+  }
+
+/**
+ * GET /api/v1/auth/ws-token
+ *
+ * Returns a short-lived JWT for the WebSocket handshake.
+ * Needed because the main cookie is httpOnly (JS can't read it),
+ * so the socket client fetches this token and passes it in handshake.auth.
+ */
+  @Get('ws-token')
+  @UseGuards(JwtAuthGuard)
+  @SkipThrottle()
+  async getWsToken(
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') role: string,
+  ) {
+    return this.authService.signWsToken(userId, role);
+  }
+
   @Get('profile')
   @UseGuards(JwtAuthGuard)
   @SkipThrottle()

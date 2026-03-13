@@ -12,27 +12,23 @@ import { DispositionsModule } from './dispositions/dispositions.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { TelephonyModule } from './telephony/telephony.module';
 import { ImportsModule } from './imports/imports.module';
+import { CsrfGuard } from './common/guards/csrf.guard';
 
 @Module({
   imports: [
-    // Global config — reads .env from project root
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '../../.env',
     }),
 
-    // Rate limiting — applied globally via APP_GUARD below.
-    // Override per-route with @Throttle({ default: { limit, ttl } })
-    // Auth endpoints get tighter limits in AuthController.
     ThrottlerModule.forRoot([
       {
         name: 'default',
-        ttl: 60_000,   // 1 minute window
-        limit: 60,     // 60 req/min default (generous for normal API use)
+        ttl: 60_000,
+        limit: 60,
       },
     ]),
 
-    // BullMQ — Redis-backed job queues
     BullModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
@@ -43,7 +39,6 @@ import { ImportsModule } from './imports/imports.module';
       inject: [ConfigService],
     }),
 
-    // Core modules
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -55,11 +50,13 @@ import { ImportsModule } from './imports/imports.module';
     ImportsModule,
   ],
   providers: [
-    // Apply ThrottlerGuard globally — every route is rate-limited by default.
-    // Webhook routes are excluded via the guard's skip logic below.
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: CsrfGuard,
     },
   ],
 })
